@@ -28,7 +28,11 @@ def health():return {"status":"ok","utc":datetime.now(timezone.utc).isoformat(),
 def scan_data():
  now=time.time()
  if CACHE["payload"] and now-CACHE["at"]<CACHE_SECONDS:return {**CACHE["payload"],"cache":"HIT"}
- try:\n  raw=yf.download(UNIVERSE,period="1y",interval="1d",auto_adjust=True,group_by="ticker",threads=True,progress=False,timeout=35)\n  bench=yf.download("SPY",period="1y",interval="1d",auto_adjust=True,progress=False,timeout=20)\n  bc=bench["Close"].dropna() if isinstance(bench.columns,pd.MultiIndex) else bench["Close"].dropna()\n  spy3=(float(bc.iloc[-1]/bc.iloc[-64])-1)*100 if len(bc)>=64 else 0
+ try:
+  raw=yf.download(UNIVERSE,period="1y",interval="1d",auto_adjust=True,group_by="ticker",threads=True,progress=False,timeout=35)
+  bench=yf.download("SPY",period="1y",interval="1d",auto_adjust=True,progress=False,timeout=20)
+  bc=bench["Close"].dropna() if isinstance(bench.columns,pd.MultiIndex) else bench["Close"].dropna()
+  spy3=(float(bc.iloc[-1]/bc.iloc[-64])-1)*100 if len(bc)>=64 else 0
  except Exception as e:raise HTTPException(502,detail=f"Provider error: {str(e)[:160]}")
  if raw is None or raw.empty:raise HTTPException(502,detail="Provider returned no quotes; possible throttling.")
  out=[]
