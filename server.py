@@ -28,7 +28,7 @@ def health():return {"status":"ok","utc":datetime.now(timezone.utc).isoformat(),
 def scan_data():
  now=time.time()
  if CACHE["payload"] and now-CACHE["at"]<CACHE_SECONDS:return {**CACHE["payload"],"cache":"HIT"}
- try:raw=yf.download(UNIVERSE,period="1y",interval="1d",auto_adjust=True,group_by="ticker",threads=True,progress=False,timeout=35)
+ try:\n  raw=yf.download(UNIVERSE,period="1y",interval="1d",auto_adjust=True,group_by="ticker",threads=True,progress=False,timeout=35)\n  bench=yf.download("SPY",period="1y",interval="1d",auto_adjust=True,progress=False,timeout=20)\n  bc=bench["Close"].dropna() if isinstance(bench.columns,pd.MultiIndex) else bench["Close"].dropna()\n  spy3=(float(bc.iloc[-1]/bc.iloc[-64])-1)*100 if len(bc)>=64 else 0
  except Exception as e:raise HTTPException(502,detail=f"Provider error: {str(e)[:160]}")
  if raw is None or raw.empty:raise HTTPException(502,detail="Provider returned no quotes; possible throttling.")
  out=[]
@@ -37,7 +37,7 @@ def scan_data():
    d=raw[symbol].dropna(subset=["Close"]);c=d.Close.astype(float);v=d.Volume.fillna(0).astype(float)
    if len(c)<60:continue
    price=float(c.iloc[-1]);sma50=float(c.tail(50).mean());sma200=float(c.tail(200).mean()) if len(c)>=200 else None
-   rs3=float((price/float(c.iloc[-64])-1)*100) if len(c)>=64 else None
+   ret3=float((price/float(c.iloc[-64])-1)*100) if len(c)>=64 else None\n   rs3=round(ret3-spy3,2) if ret3 is not None else None
    avg_dvol=float((c*v).tail(20).mean());vavg=float(v.tail(20).mean());vr=float(v.iloc[-1]/vavg) if vavg else 0
    h=d.High.astype(float);lo=d.Low.astype(float);pc=c.shift(1)
    atr=float(pd.concat([h-lo,(h-pc).abs(),(lo-pc).abs()],axis=1).max(axis=1).tail(14).mean())
@@ -47,10 +47,10 @@ def scan_data():
    score=(25 if a50 else 0)+(15 if a200 else 0)+(20 if rs3 is not None and rs3>0 else 0)+(15 if rs3 is not None and rs3>=10 else 0)+(10 if vr>=1.2 else 0)+(10 if near else 0)+(5 if liquid else 0)
    status="ENTRY READY" if liquid and a50 and a200 and rs3 is not None and rs3>0 and vr>=1.2 else "APPROACHING" if liquid and score>=55 else "WATCH" if liquid else "NO TRADE"
    sector=next((k for k,vals in SECTORS.items() if symbol in vals),"Other")
-   out.append({"symbol":symbol,"sector":sector,"price":round(price,2),"changePct":round((price/float(c.iloc[-2])-1)*100,2),"rs3m":round(rs3,2) if rs3 is not None else None,"avgDollarVolume":round(avg_dvol),"volumeRatio":round(vr,2),"sma50":round(sma50,2),"sma200":round(sma200,2) if sma200 else None,"above50":a50,"above200":a200,"near52wHigh":near,"entry":round(entry,2),"stop":round(stop,2),"target5R":round(target,2),"rr":5,"score":score,"status":status,"lastBarDate":str(d.index[-1].date())})
+   out.append({"symbol":symbol,"sector":sector,"price":round(price,2),"changePct":round((price/float(c.iloc[-2])-1)*100,2),"rs3m":round(rs3,2) if rs3 is not None else None,"return3m":round(ret3,2) if ret3 is not None else None,"spyReturn3m":round(spy3,2),"avgDollarVolume":round(avg_dvol),"volumeRatio":round(vr,2),"sma50":round(sma50,2),"sma200":round(sma200,2) if sma200 else None,"above50":a50,"above200":a200,"near52wHigh":near,"entry":round(entry,2),"stop":round(stop,2),"target5R":round(target,2),"rr":5,"score":score,"status":status,"lastBarDate":str(d.index[-1].date())})
   except Exception:continue
  out.sort(key=lambda x:(x["score"],x["rs3m"] or -999),reverse=True)
- payload={"source":"Yahoo Finance via yfinance (unofficial; timing and request limits vary)","dataMode":"DELAYED_OR_UNVERIFIED","fetchedAt":datetime.now(timezone.utc).isoformat(),"universeCount":len(UNIVERSE),"returnedCount":len(out),"sectorCount":len(SECTORS),"cache":"MISS","stocks":out}
+ payload={"source":"Yahoo Finance via yfinance (unofficial; RS is 3-month excess return vs SPY)","dataMode":"DELAYED_OR_UNVERIFIED","fetchedAt":datetime.now(timezone.utc).isoformat(),"universeCount":len(UNIVERSE),"returnedCount":len(out),"sectorCount":len(SECTORS),"cache":"MISS","stocks":out}
  CACHE.update(at=now,payload=payload);return payload
 @app.get("/api/scan")
 def scan():return scan_data()
