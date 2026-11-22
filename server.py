@@ -21,8 +21,10 @@ SECTORS={
 }
 UNIVERSE=list(dict.fromkeys(s for vals in SECTORS.values() for s in vals))
 CACHE={"at":0,"payload":None};CACHE_SECONDS=600
+@app.head("/")
 @app.get("/")
 def root():return {"service":"US Momentum AI Trader Market API","status":"online","endpoints":["/health","/api/scan","/api/quote/{symbol}","/docs"],"message":"This is the API, not the web dashboard."}
+@app.head("/health")
 @app.get("/health")
 def health():return {"status":"ok","utc":datetime.now(timezone.utc).isoformat(),"symbols":len(UNIVERSE),"sectors":len(SECTORS)}
 def scan_data():
