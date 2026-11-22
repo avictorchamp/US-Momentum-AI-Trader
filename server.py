@@ -59,8 +59,10 @@ def scan_data():
  out.sort(key=lambda x:(x["score"],x["rs3m"] or -999),reverse=True)
  payload={"source":"Yahoo Finance via yfinance (unofficial; RS is 3-month excess return vs SPY)","dataMode":"DELAYED_OR_UNVERIFIED","fetchedAt":datetime.now(timezone.utc).isoformat(),"universeCount":len(UNIVERSE),"returnedCount":len(out),"sectorCount":len(SECTORS),"cache":"MISS","stocks":out}
  CACHE.update(at=now,payload=payload);return payload
+@app.head("/api/scan")
 @app.get("/api/scan")
 def scan():return scan_data()
+@app.head("/api/quote/{symbol}")
 @app.get("/api/quote/{symbol}")
 def quote(symbol:str):
  s=symbol.upper()
