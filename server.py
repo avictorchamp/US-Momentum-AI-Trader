@@ -41,7 +41,8 @@ def scan_data():
    d=raw[symbol].dropna(subset=["Close"]);c=d.Close.astype(float);v=d.Volume.fillna(0).astype(float)
    if len(c)<60:continue
    price=float(c.iloc[-1]);sma50=float(c.tail(50).mean());sma200=float(c.tail(200).mean()) if len(c)>=200 else None
-   ret3=float((price/float(c.iloc[-64])-1)*100) if len(c)>=64 else None\n   rs3=round(ret3-spy3,2) if ret3 is not None else None
+   ret3=float((price/float(c.iloc[-64])-1)*100) if len(c)>=64 else None
+   rs3=round(ret3-spy3,2) if ret3 is not None else None
    avg_dvol=float((c*v).tail(20).mean());vavg=float(v.tail(20).mean());vr=float(v.iloc[-1]/vavg) if vavg else 0
    h=d.High.astype(float);lo=d.Low.astype(float);pc=c.shift(1)
    atr=float(pd.concat([h-lo,(h-pc).abs(),(lo-pc).abs()],axis=1).max(axis=1).tail(14).mean())
