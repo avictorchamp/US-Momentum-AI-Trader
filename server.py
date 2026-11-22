@@ -62,6 +62,51 @@ def scan_data():
 @app.head("/api/scan")
 @app.get("/api/scan")
 def scan():return scan_data()
+
+BACKTEST_CACHE={"at":0,"payload":None}
+@app.head("/api/backtest")
+@app.get("/api/backtest")
+def backtest():
+ now=time.time()
+ if BACKTEST_CACHE["payload"] and now-BACKTEST_CACHE["at"]<3600:return BACKTEST_CACHE["payload"]
+ # Fixed, liquid large-cap sample; monthly top-5 momentum, 12-month lookback,
+ # long-only, equal-weight, 10 bps one-way turnover cost. SPY is benchmark.
+ symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","AVGO","LLY","JPM","XOM","COST","WMT","NFLX","AMD","CRM","ORCL","GE","CAT","V","MA","UNH","HD","PG","KO","TSLA"]
+ try:
+  raw=yf.download(symbols+["SPY"],period="5y",interval="1d",auto_adjust=True,group_by="ticker",threads=True,progress=False,timeout=50)
+  close=pd.DataFrame({s:raw[s]["Close"] for s in symbols if s in raw.columns.get_level_values(0)}).dropna(how="all")
+  spy=raw["SPY"]["Close"].dropna()
+  if close.empty or len(close)<300 or len(spy)<300:raise ValueError("Insufficient 5-year daily price history")
+  monthly=close.resample("ME").last()
+  mom=monthly/monthly.shift(12)-1
+  rets=monthly.pct_change()
+  dates=monthly.index
+  equity=1.0;curve=[];bench=1.0;prev=set();trades=0;months=0
+  for i in range(13,len(dates)-1):
+   ranked=mom.iloc[i].dropna().sort_values(ascending=False)
+   selected=set(ranked.head(5).index)
+   if not selected:continue
+   nextret=rets.iloc[i+1].reindex(list(selected)).dropna()
+   if nextret.empty:continue
+   turnover=len(selected.symmetric_difference(prev))/max(1,len(selected))
+   period=float(nextret.mean())-0.001*turnover
+   equity*=1+period
+   p0=spy.reindex([dates[i]]).ffill().iloc[0] if dates[i] in spy.index else spy.loc[:dates[i]].iloc[-1]
+   p1=spy.reindex([dates[i+1]]).ffill().iloc[0] if dates[i+1] in spy.index else spy.loc[:dates[i+1]].iloc[-1]
+   bench*=float(p1/p0)
+   curve.append({"date":str(dates[i+1].date()),"strategy":round(equity*100,2),"spy":round(bench*100,2),"monthlyReturnPct":round(period*100,2),"holdings":sorted(selected)})
+   prev=selected;months+=1;trades+=len(selected.symmetric_difference(prev))
+  vals=[x["strategy"] for x in curve]
+  if not vals:raise ValueError("No valid monthly observations")
+  peak=100.0;maxdd=0.0
+  for v in vals:
+   peak=max(peak,v);maxdd=min(maxdd,(v/peak-1)*100)
+  total=(equity-1)*100;spyret=(bench-1)*100
+  years=months/12
+  payload={"status":"ok","strategy":"12-month momentum, monthly rebalance, top 5 equal-weight","universe":symbols,"universeSize":len(symbols),"periodStart":curve[0]["date"],"periodEnd":curve[-1]["date"],"months":months,"initialIndex":100,"finalIndex":round(equity*100,2),"totalReturnPct":round(total,2),"cagrPct":round(((equity)**(1/years)-1)*100,2) if years else None,"spyReturnPct":round(spyret,2),"maxDrawdownPct":round(maxdd,2),"transactionCost":"10 bps per one-way turnover","dataSource":"Yahoo Finance adjusted daily prices; historical backtest, not live performance","curve":curve}
+  BACKTEST_CACHE.update(at=now,payload=payload);return payload
+ except Exception as e:raise HTTPException(502,detail="Backtest data/calculation failed: "+str(e)[:180])
+
 @app.head("/api/quote/{symbol}")
 @app.get("/api/quote/{symbol}")
 def quote(symbol:str):
