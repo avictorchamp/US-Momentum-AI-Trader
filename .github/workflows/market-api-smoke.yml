@@ -17,7 +17,7 @@ jobs:
       - name: Five-year backtest
         run: |
           curl --fail-with-body --silent --show-error --max-time 300 https://us-momentum-market-api.onrender.com/api/backtest -o backtest.json
-          python -c "import json; d=json.load(open('backtest.json')); assert d.get('status')=='ok' and d.get('months',0)>0,d; print('Backtest PASS'); print('Period:',d.get('periodStart'),'to',d.get('periodEnd')); print('Months:',d.get('months')); print('Total return:',d.get('totalReturnPct')); print('CAGR:',d.get('cagrPct')); print('SPY return:',d.get('spyReturnPct')); print('Max drawdown:',d.get('maxDrawdownPct')); print('Transaction cost:',d.get('transactionCost')); print('Universe size:',d.get('universeSize'))"
+          python -c "import json; d=json.load(open('backtest.json')); assert d.get('status')=='ok' and d.get('months',0)>0,d; print('Backtest PASS'); print('Period:',d.get('periodStart'),'to',d.get('periodEnd')); print('Months:',d.get('months')); print('Total return:',d.get('totalReturnPct')); print('CAGR:',d.get('cagrPct')); print('SPY return:',d.get('spyReturnPct')); print('Max drawdown:',d.get('maxDrawdownPct')); print('Transaction cost:',d.get('transactionCost')); print('Data coverage:',d.get('dataSymbolsCount'),'/',d.get('universeSize')); print('Missing symbols:',sorted(set(d.get('universe',[]))-set(d.get('dataSymbols',[]))))"
   scan:
     needs: backtest
     if: always() && needs.health.result == 'success'
