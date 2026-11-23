@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
-import time
+from datetime import datetime, timezone, timedelta
+import time, io
+import requests
 import yfinance as yf
 import pandas as pd
 from fastapi import FastAPI, HTTPException
@@ -20,6 +21,55 @@ SECTORS={
 "Utilities":["NEE","DUK","SO","AEP","EXC","XEL","ED","AES"]
 }
 UNIVERSE=list(dict.fromkeys(s for vals in SECTORS.values() for s in vals))
+# Provider fallback: Yahoo throttling is frequent on hosted IPs. Recover missing symbols from Stooq.
+DOWNLOAD_PAUSE=0.25
+
+def _stooq_symbol(symbol):
+ return symbol.lower()+'.us'
+
+def stooq_history(symbol, period='5y'):
+ try:
+  url='https://stooq.com/q/d/l/?s='+_stooq_symbol(symbol)+'&i=d'
+  response=requests.get(url,timeout=20,headers={'User-Agent':'Mozilla/5.0'})
+  response.raise_for_status()
+  df=pd.read_csv(io.StringIO(response.text))
+  if df.empty or 'Date' not in df.columns:return pd.DataFrame()
+  df['Date']=pd.to_datetime(df['Date'],errors='coerce');df=df.dropna(subset=['Date']).set_index('Date').sort_index()
+  if period=='5y':df=df[df.index>=pd.Timestamp.now().normalize()-pd.Timedelta(days=1900)]
+  return df
+ except Exception:return pd.DataFrame()
+
+def download_prices(symbols, period='1y', batch_size=20):
+ parts=[];received=set()
+ for start in range(0,len(symbols),batch_size):
+  batch=symbols[start:start+batch_size]
+  try:
+   data=yf.download(batch,period=period,interval='1d',auto_adjust=True,group_by='ticker',threads=False,progress=False,timeout=25)
+   if data is not None and not data.empty:
+    if isinstance(data.columns,pd.MultiIndex):
+     for s in batch:
+      if s in data.columns.get_level_values(0) and data[s].dropna(how='all').shape[0]>0:received.add(s)
+    elif len(batch)==1 and data.dropna(how='all').shape[0]>0:received.add(batch[0]);data=pd.concat({batch[0]:data},axis=1)
+    parts.append(data)
+  except Exception:pass
+  time.sleep(DOWNLOAD_PAUSE)
+ raw=pd.concat(parts,axis=1) if parts else pd.DataFrame()
+ for s in [x for x in symbols if x not in received]:
+  st=stooq_history(s,period)
+  if not st.empty:
+   st=st.rename(columns={c:c.title() for c in st.columns})
+   raw=pd.concat([raw,pd.concat({s:st},axis=1)],axis=1) if not raw.empty else pd.concat({s:st},axis=1)
+   received.add(s)
+  time.sleep(DOWNLOAD_PAUSE)
+ return raw,received
+
+def download_benchmark(period='5y'):
+ try:
+  d=yf.download('SPY',period=period,interval='1d',auto_adjust=True,threads=False,progress=False,timeout=25)
+  if d is not None and not d.empty:return d
+ except Exception:pass
+ return stooq_history('SPY',period)
+
 CACHE={"at":0,"payload":None};CACHE_SECONDS=600
 @app.head("/")
 @app.get("/")
@@ -31,13 +81,8 @@ def scan_data():
  now=time.time()
  if CACHE["payload"] and now-CACHE["at"]<CACHE_SECONDS:return {**CACHE["payload"],"cache":"HIT"}
  try:
-  parts=[]
-  for start in range(0,len(UNIVERSE),20):
-   batch=UNIVERSE[start:start+20]
-   part=yf.download(batch,period="1y",interval="1d",auto_adjust=True,group_by="ticker",threads=False,progress=False,timeout=25)
-   if part is not None and not part.empty:parts.append(part)
-  raw=pd.concat(parts,axis=1) if parts else pd.DataFrame()
-  bench=yf.download("SPY",period="1y",interval="1d",auto_adjust=True,progress=False,threads=False,timeout=20)
+  raw,received=download_prices(UNIVERSE,period="1y",batch_size=20)
+  bench=download_benchmark("1y")
   bc=bench["Close"].dropna() if isinstance(bench.columns,pd.MultiIndex) else bench["Close"].dropna()
   spy3=(float(bc.iloc[-1]/bc.iloc[-64])-1)*100 if len(bc)>=64 else 0
  except Exception as e:raise HTTPException(502,detail=f"Provider error: {str(e)[:160]}")
@@ -78,13 +123,8 @@ def backtest():
  # long-only, equal-weight, 10 bps one-way turnover cost. SPY is benchmark.
  symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","AVGO","LLY","JPM","XOM","COST","WMT","NFLX","AMD","CRM","ORCL","GE","CAT","V","MA","UNH","HD","PG","KO","TSLA"]
  try:
-  parts=[]
-  for start in range(0,len(symbols),10):
-   batch=symbols[start:start+10]
-   part=yf.download(batch,period="5y",interval="1d",auto_adjust=True,group_by="ticker",threads=False,progress=False,timeout=30)
-   if part is not None and not part.empty:parts.append(part)
-  raw=pd.concat(parts,axis=1) if parts else pd.DataFrame()
-  spydata=yf.download("SPY",period="5y",interval="1d",auto_adjust=True,progress=False,threads=False,timeout=30)
+  raw,received=download_prices(symbols,period="5y",batch_size=10)
+  spydata=download_benchmark("5y")
   close=pd.DataFrame({s:raw[s]["Close"] for s in symbols if s in raw.columns.get_level_values(0)}).dropna(how="all")
   spy=spydata["Close"].dropna()
   if close.empty or len(close)<300 or len(spy)<300:raise ValueError("Insufficient 5-year daily price history")
