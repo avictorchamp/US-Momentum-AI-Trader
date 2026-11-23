@@ -8,22 +8,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Health check
-        run: curl --fail --silent --show-error --max-time 60 https://us-momentum-market-api.onrender.com/health
-  scan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    continue-on-error: true
-    steps:
-      - name: Market scan
-        run: |
-          curl --silent --show-error --max-time 180 https://us-momentum-market-api.onrender.com/api/scan -o scan.json
-          python -c "import json; d=json.load(open('scan.json')); assert d.get('stocks') and d.get('returnedCount',0)>0,d; print('Scan PASS:',d.get('returnedCount'),'stocks; top5:',[(x['symbol'],x['score'],x['status']) for x in d['stocks'][:5]])"
+        run: curl --fail-with-body --silent --show-error --max-time 60 https://us-momentum-market-api.onrender.com/health
   backtest:
-    needs: scan
+    needs: health
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Five-year backtest
         run: |
-          curl --fail --silent --show-error --max-time 300 https://us-momentum-market-api.onrender.com/api/backtest -o backtest.json
-          python -c "import json; d=json.load(open('backtest.json')); assert d.get('status')=='ok' and d.get('months',0)>0,d; print('PASS'); print('Period:',d.get('periodStart'),'to',d.get('periodEnd)); print('Months:',d.get('months)); print('Strategy total return:',d.get('totalReturnPct')); print('Strategy CAGR:',d.get('cagrPct')); print('SPY return:',d.get('spyReturnPct')); print('Max drawdown:',d.get('maxDrawdownPct')); print('Final index:',d.get('finalIndex')); print('Universe size:',d.get('universeSize'))"
+          curl --fail-with-body --silent --show-error --max-time 300 https://us-momentum-market-api.onrender.com/api/backtest -o backtest.json
+          python -c "import json; d=json.load(open('backtest.json')); assert d.get('status')=='ok' and d.get('months',0)>0,d; print('Backtest PASS'); print('Period:',d.get('periodStart'),'to',d.get('periodEnd')); print('Months:',d.get('months')); print('Total return:',d.get('totalReturnPct')); print('CAGR:',d.get('cagrPct')); print('SPY return:',d.get('spyReturnPct')); print('Max drawdown:',d.get('maxDrawdownPct')); print('Transaction cost:',d.get('transactionCost')); print('Universe size:',d.get('universeSize'))"
+  scan:
+    needs: backtest
+    if: always() && needs.health.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Market scan
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 180 https://us-momentum-market-api.onrender.com/api/scan -o scan.json
+          python -c "import json; d=json.load(open('scan.json')); assert d.get('stocks') and d.get('returnedCount',0)>0,d; print('Scan PASS:',d.get('returnedCount'),'stocks; top5:',[(x['symbol'],x['score'],x['status']) for x in d['stocks'][:5]])"
