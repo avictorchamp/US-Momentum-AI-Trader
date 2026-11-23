@@ -88,9 +88,15 @@ def backtest():
   close=pd.DataFrame({s:raw[s]["Close"] for s in symbols if s in raw.columns.get_level_values(0)}).dropna(how="all")
   spy=spydata["Close"].dropna()
   if close.empty or len(close)<300 or len(spy)<300:raise ValueError("Insufficient 5-year daily price history")
+  # Use only completed calendar months to avoid treating the current partial month as a full return.
   monthly=close.resample("ME").last()
+  current_month=pd.Timestamp.now().to_period("M")
+  monthly=monthly[monthly.index.to_period("M")<current_month]
+  valid_symbols=[s for s in symbols if s in close.columns and close[s].notna().sum()>=300]
+  missing_symbols=[s for s in symbols if s not in valid_symbols]
+  if missing_symbols:raise ValueError("Incomplete 5-year data; missing/short history: "+", ".join(missing_symbols))
   mom=monthly/monthly.shift(12)-1
-  rets=monthly.pct_change()
+  rets=monthly.pct_change(fill_method=None)
   dates=monthly.index
   equity=1.0;curve=[];bench=1.0;prev=set();trades=0;months=0
   for i in range(13,len(dates)-1):
@@ -114,7 +120,7 @@ def backtest():
    peak=max(peak,v);maxdd=min(maxdd,(v/peak-1)*100)
   total=(equity-1)*100;spyret=(bench-1)*100
   years=months/12
-  payload={"status":"ok","strategy":"12-month momentum, monthly rebalance, top 5 equal-weight","universe":symbols,"universeSize":len(symbols),"periodStart":curve[0]["date"],"periodEnd":curve[-1]["date"],"months":months,"initialIndex":100,"finalIndex":round(equity*100,2),"totalReturnPct":round(total,2),"cagrPct":round(((equity)**(1/years)-1)*100,2) if years else None,"spyReturnPct":round(spyret,2),"maxDrawdownPct":round(maxdd,2),"transactionCost":"10 bps per one-way turnover","dataSource":"Yahoo Finance adjusted daily prices; historical backtest, not live performance","curve":curve}
+  payload={"status":"ok","strategy":"12-month momentum, monthly rebalance, top 5 equal-weight","universe":symbols,"universeSize":len(symbols),"dataSymbolsCount":len(valid_symbols),"dataSymbols":valid_symbols,"periodStart":curve[0]["date"],"periodEnd":curve[-1]["date"],"months":months,"initialIndex":100,"finalIndex":round(equity*100,2),"totalReturnPct":round(total,2),"cagrPct":round(((equity)**(1/years)-1)*100,2) if years else None,"spyReturnPct":round(spyret,2),"maxDrawdownPct":round(maxdd,2),"transactionCost":"10 bps per one-way turnover","dataSource":"Yahoo Finance adjusted daily prices; historical backtest, not live performance","curve":curve}
   BACKTEST_CACHE.update(at=now,payload=payload);return payload
  except Exception as e:raise HTTPException(502,detail="Backtest data/calculation failed: "+str(e)[:180])
 
