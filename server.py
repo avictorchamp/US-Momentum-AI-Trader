@@ -31,8 +31,13 @@ def scan_data():
  now=time.time()
  if CACHE["payload"] and now-CACHE["at"]<CACHE_SECONDS:return {**CACHE["payload"],"cache":"HIT"}
  try:
-  raw=yf.download(UNIVERSE,period="1y",interval="1d",auto_adjust=True,group_by="ticker",threads=True,progress=False,timeout=35)
-  bench=yf.download("SPY",period="1y",interval="1d",auto_adjust=True,progress=False,timeout=20)
+  parts=[]
+  for start in range(0,len(UNIVERSE),20):
+   batch=UNIVERSE[start:start+20]
+   part=yf.download(batch,period="1y",interval="1d",auto_adjust=True,group_by="ticker",threads=False,progress=False,timeout=25)
+   if part is not None and not part.empty:parts.append(part)
+  raw=pd.concat(parts,axis=1) if parts else pd.DataFrame()
+  bench=yf.download("SPY",period="1y",interval="1d",auto_adjust=True,progress=False,threads=False,timeout=20)
   bc=bench["Close"].dropna() if isinstance(bench.columns,pd.MultiIndex) else bench["Close"].dropna()
   spy3=(float(bc.iloc[-1]/bc.iloc[-64])-1)*100 if len(bc)>=64 else 0
  except Exception as e:raise HTTPException(502,detail=f"Provider error: {str(e)[:160]}")
@@ -73,9 +78,15 @@ def backtest():
  # long-only, equal-weight, 10 bps one-way turnover cost. SPY is benchmark.
  symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","AVGO","LLY","JPM","XOM","COST","WMT","NFLX","AMD","CRM","ORCL","GE","CAT","V","MA","UNH","HD","PG","KO","TSLA"]
  try:
-  raw=yf.download(symbols+["SPY"],period="5y",interval="1d",auto_adjust=True,group_by="ticker",threads=True,progress=False,timeout=50)
+  parts=[]
+  for start in range(0,len(symbols),10):
+   batch=symbols[start:start+10]
+   part=yf.download(batch,period="5y",interval="1d",auto_adjust=True,group_by="ticker",threads=False,progress=False,timeout=30)
+   if part is not None and not part.empty:parts.append(part)
+  raw=pd.concat(parts,axis=1) if parts else pd.DataFrame()
+  spydata=yf.download("SPY",period="5y",interval="1d",auto_adjust=True,progress=False,threads=False,timeout=30)
   close=pd.DataFrame({s:raw[s]["Close"] for s in symbols if s in raw.columns.get_level_values(0)}).dropna(how="all")
-  spy=raw["SPY"]["Close"].dropna()
+  spy=spydata["Close"].dropna()
   if close.empty or len(close)<300 or len(spy)<300:raise ValueError("Insufficient 5-year daily price history")
   monthly=close.resample("ME").last()
   mom=monthly/monthly.shift(12)-1
