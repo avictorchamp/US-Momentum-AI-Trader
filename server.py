@@ -88,14 +88,14 @@ def backtest():
    if not selected:continue
    nextret=rets.iloc[i+1].reindex(list(selected)).dropna()
    if nextret.empty:continue
-   turnover=len(selected.symmetric_difference(prev))/max(1,len(selected))
+   turnover=sum(abs((1/5 if s in selected else 0)-(1/5 if s in prev else 0)) for s in selected.union(prev))
    period=float(nextret.mean())-0.001*turnover
    equity*=1+period
    p0=spy.reindex([dates[i]]).ffill().iloc[0] if dates[i] in spy.index else spy.loc[:dates[i]].iloc[-1]
    p1=spy.reindex([dates[i+1]]).ffill().iloc[0] if dates[i+1] in spy.index else spy.loc[:dates[i+1]].iloc[-1]
    bench*=float(p1/p0)
    curve.append({"date":str(dates[i+1].date()),"strategy":round(equity*100,2),"spy":round(bench*100,2),"monthlyReturnPct":round(period*100,2),"holdings":sorted(selected)})
-   prev=selected;months+=1;trades+=len(selected.symmetric_difference(prev))
+   prev=selected;months+=1
   vals=[x["strategy"] for x in curve]
   if not vals:raise ValueError("No valid monthly observations")
   peak=100.0;maxdd=0.0
