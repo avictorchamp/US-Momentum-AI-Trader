@@ -19,6 +19,7 @@ jobs:
           curl --silent --show-error --max-time 180 https://us-momentum-market-api.onrender.com/api/scan -o scan.json
           python -c "import json; d=json.load(open('scan.json')); assert d.get('stocks') and d.get('returnedCount',0)>0,d; print('Scan PASS:',d.get('returnedCount'),'stocks; top5:',[(x['symbol'],x['score'],x['status']) for x in d['stocks'][:5]])"
   backtest:
+    needs: scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
