@@ -48,18 +48,26 @@ def download_prices(symbols, period='1y', batch_size=20):
    if data is not None and not data.empty:
     if isinstance(data.columns,pd.MultiIndex):
      for s in batch:
-      if s in data.columns.get_level_values(0) and data[s].dropna(how='all').shape[0]>0:received.add(s)
-    elif len(batch)==1 and data.dropna(how='all').shape[0]>0:received.add(batch[0]);data=pd.concat({batch[0]:data},axis=1)
+      if s in data.columns.get_level_values(0) and data[s].dropna(subset=["Close"]).shape[0]>=(300 if period=="5y" else 60):received.add(s)
+    elif len(batch)==1 and data.dropna(subset=["Close"]).shape[0]>=(300 if period=="5y" else 60):received.add(batch[0]);data=pd.concat({batch[0]:data},axis=1)
     parts.append(data)
   except Exception:pass
   time.sleep(DOWNLOAD_PAUSE)
  raw=pd.concat(parts,axis=1) if parts else pd.DataFrame()
+ # A symbol with a partial Yahoo response is still incomplete. Fill it from Stooq
+ # rather than incorrectly treating any non-empty response as full history.
+ required_rows=300 if period=="5y" else 60
  for s in [x for x in symbols if x not in received]:
   st=stooq_history(s,period)
   if not st.empty:
    st=st.rename(columns={c:c.title() for c in st.columns})
-   raw=pd.concat([raw,pd.concat({s:st},axis=1)],axis=1) if not raw.empty else pd.concat({s:st},axis=1)
-   received.add(s)
+   if st.dropna(subset=["Close"]).shape[0]>=required_rows:
+    one=pd.concat({s:st},axis=1)
+    if not raw.empty and isinstance(raw.columns,pd.MultiIndex) and s in raw.columns.get_level_values(0):
+     raw[s]=raw[s].combine_first(st)
+    else:
+     raw=pd.concat([raw,one],axis=1) if not raw.empty else one
+    received.add(s)
   time.sleep(DOWNLOAD_PAUSE)
  return raw,received
 
