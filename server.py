@@ -1,5 +1,5 @@
 from datetime import datetime, timezone, timedelta
-import time, io
+import time, io, os
 import requests
 import yfinance as yf
 import pandas as pd
@@ -84,7 +84,7 @@ CACHE={"at":0,"payload":None};CACHE_SECONDS=600
 def root():return {"service":"US Momentum AI Trader Market API","status":"online","endpoints":["/health","/api/scan","/api/quote/{symbol}","/docs"],"message":"This is the API, not the web dashboard."}
 @app.head("/health")
 @app.get("/health")
-def health():return {"status":"ok","utc":datetime.now(timezone.utc).isoformat(),"symbols":len(UNIVERSE),"sectors":len(SECTORS)}
+def health():return {"status":"ok","utc":datetime.now(timezone.utc).isoformat(),"commit":os.getenv("RENDER_GIT_COMMIT"),"symbols":len(UNIVERSE),"sectors":len(SECTORS)}
 def scan_data():
  now=time.time()
  if CACHE["payload"] and now-CACHE["at"]<CACHE_SECONDS:return {**CACHE["payload"],"cache":"HIT"}
