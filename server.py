@@ -115,7 +115,13 @@ def scan_data():
    out.append({"symbol":symbol,"sector":sector,"price":round(price,2),"changePct":round((price/float(c.iloc[-2])-1)*100,2),"rs3m":round(rs3,2) if rs3 is not None else None,"return3m":round(ret3,2) if ret3 is not None else None,"spyReturn3m":round(spy3,2),"avgDollarVolume":round(avg_dvol),"volumeRatio":round(vr,2),"sma50":round(sma50,2),"sma200":round(sma200,2) if sma200 else None,"above50":a50,"above200":a200,"near52wHigh":near,"entry":round(entry,2),"stop":round(stop,2),"target5R":round(target,2),"rr":5,"score":score,"status":status,"lastBarDate":str(d.index[-1].date())})
   except Exception:continue
  out.sort(key=lambda x:(x["score"],x["rs3m"] or -999),reverse=True)
- payload={"source":"Yahoo Finance via yfinance (unofficial; RS is 3-month excess return vs SPY)","dataMode":"DELAYED_OR_UNVERIFIED","fetchedAt":datetime.now(timezone.utc).isoformat(),"universeCount":len(UNIVERSE),"returnedCount":len(out),"sectorCount":len(SECTORS),"cache":"MISS","stocks":out}
+ breadth50=round(sum(1 for x in out if x["above50"])/len(out)*100,1) if out else 0
+ breadth200=round(sum(1 for x in out if x["above200"])/len(out)*100,1) if out else 0
+ spy_close=bc.astype(float);spy_price=float(spy_close.iloc[-1]);spy_sma50=float(spy_close.tail(50).mean());spy_sma200=float(spy_close.tail(200).mean()) if len(spy_close)>=200 else None
+ if spy_sma200 and spy_price<spy_sma200 and breadth50<40:regime="RED"
+ elif spy_price>spy_sma50 and spy_sma200 and spy_price>spy_sma200 and breadth50>=60:regime="GREEN"
+ else:regime="YELLOW"
+ payload={"source":"Yahoo Finance via yfinance (unofficial; RS is 3-month excess return vs SPY)","dataMode":"DELAYED_OR_UNVERIFIED","fetchedAt":datetime.now(timezone.utc).isoformat(),"universeCount":len(UNIVERSE),"returnedCount":len(out),"sectorCount":len(SECTORS),"cache":"MISS","stocks":out,"marketRegime":{"state":regime,"spyPrice":round(spy_price,2),"spySMA50":round(spy_sma50,2),"spySMA200":round(spy_sma200,2) if spy_sma200 else None,"aboveSMA50Pct":breadth50,"aboveSMA200Pct":breadth200,"rule":"GREEN: SPY above SMA50+SMA200 and breadth50>=60%; RED: SPY below SMA200 and breadth50<40%; otherwise YELLOW"}}
  CACHE.update(at=now,payload=payload);return payload
 @app.head("/api/scan")
 @app.get("/api/scan")
