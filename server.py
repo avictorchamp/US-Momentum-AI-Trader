@@ -121,6 +121,9 @@ def scan_data():
  if spy_sma200 and spy_price<spy_sma200 and breadth50<40:regime="RED"
  elif spy_price>spy_sma50 and spy_sma200 and spy_price>spy_sma200 and breadth50>=60:regime="GREEN"
  else:regime="YELLOW"
+ if regime=="RED":
+  for item in out:
+   if item["status"]=="ENTRY READY":item["status"]="NO TRADE"
  payload={"source":"Yahoo Finance via yfinance (unofficial; RS is 3-month excess return vs SPY)","dataMode":"DELAYED_OR_UNVERIFIED","fetchedAt":datetime.now(timezone.utc).isoformat(),"universeCount":len(UNIVERSE),"returnedCount":len(out),"sectorCount":len(SECTORS),"cache":"MISS","stocks":out,"marketRegime":{"state":regime,"spyPrice":round(spy_price,2),"spySMA50":round(spy_sma50,2),"spySMA200":round(spy_sma200,2) if spy_sma200 else None,"aboveSMA50Pct":breadth50,"aboveSMA200Pct":breadth200,"rule":"GREEN: SPY above SMA50+SMA200 and breadth50>=60%; RED: SPY below SMA200 and breadth50<40%; otherwise YELLOW"}}
  CACHE.update(at=now,payload=payload);return payload
 @app.head("/api/scan")
