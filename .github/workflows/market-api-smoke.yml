@@ -6,9 +6,29 @@ on:
 jobs:
   health:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - name: Health check
-        run: curl --fail-with-body --silent --show-error --max-time 60 https://us-momentum-market-api.onrender.com/health
+      - name: Wait for this commit to be LIVE
+        run: |
+          python - <<'PY'
+          import json, os, sys, time
+          from urllib.request import urlopen
+          expected = os.environ["GITHUB_SHA"]
+          url = "https://us-momentum-market-api.onrender.com/health"
+          for attempt in range(40):
+              try:
+                  with urlopen(url, timeout=10) as response:
+                      data = json.load(response)
+                  deployed = data.get("commit")
+                  if data.get("status") == "ok" and deployed == expected:
+                      print("LIVE commit verified:", deployed)
+                      sys.exit(0)
+                  print(f"Waiting for Render deploy: expected={expected}, live={deployed}")
+              except Exception as exc:
+                  print("Health endpoint not ready:", str(exc))
+              time.sleep(15)
+          raise SystemExit("Timed out waiting for the exact GitHub commit to become LIVE")
+          PY
   backtest:
     needs: health
     runs-on: ubuntu-latest
