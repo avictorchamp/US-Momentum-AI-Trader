@@ -1,6 +1,6 @@
 # US Momentum AI Trader — MVP
 
-Responsive static dashboard prototype. Paper trading only.
+Dashboard with live scan API, local portfolio tracker, risk calculator and paper journal. Paper trading only.
 
 ## Pages
 - Overview and sample market regime
@@ -15,4 +15,4 @@ Render Static Site:
 - Branch: `main`
 
 ## Important
-All quotes, relative-strength values, regime labels and setups are illustrative sample data. No live market-data provider, persistent database, authentication, backtest engine, or broker execution is connected. Do not use for real-money decisions.
+Scanner uses Market API data (may be delayed or incomplete). Portfolio and paper journal use local browser storage and are not synced/backed up. Market regime automation and broker execution are not connected. Paper trading only; do not use as automatic real-money advice.
