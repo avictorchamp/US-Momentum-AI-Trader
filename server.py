@@ -142,7 +142,8 @@ def backtest():
   monthly=monthly[monthly.index.to_period("M")<current_month]
   valid_symbols=[s for s in symbols if s in close.columns and close[s].notna().sum()>=300]
   missing_symbols=[s for s in symbols if s not in valid_symbols]
-  if missing_symbols:raise ValueError("Incomplete 5-year data; missing/short history: "+", ".join(missing_symbols))
+  if len(valid_symbols)<15:raise ValueError(f"Insufficient symbol coverage: {len(valid_symbols)}/25; missing/short: "+", ".join(missing_symbols))
+  close=close[valid_symbols].copy()
   mom=monthly/monthly.shift(12)-1
   rets=monthly.pct_change(fill_method=None)
   dates=monthly.index
