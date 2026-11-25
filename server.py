@@ -58,16 +58,25 @@ def download_prices(symbols, period='1y', batch_size=20):
  # rather than incorrectly treating any non-empty response as full history.
  required_rows=300 if period=="5y" else 60
  for s in [x for x in symbols if x not in received]:
-  st=stooq_history(s,period)
-  if not st.empty:
-   st=st.rename(columns={c:c.title() for c in st.columns})
-   if st.dropna(subset=["Close"]).shape[0]>=required_rows:
-    one=pd.concat({s:st},axis=1)
-    if not raw.empty and isinstance(raw.columns,pd.MultiIndex) and s in raw.columns.get_level_values(0):
-     raw[s]=raw[s].combine_first(st)
-    else:
-     raw=pd.concat([raw,one],axis=1) if not raw.empty else one
+  # Retry a missing ticker individually via Yahoo before Stooq; batch throttling
+  # can affect only one ticker even when the rest of the batch succeeds.
+  try:
+   retry=yf.download(s,period=period,interval='1d',auto_adjust=True,threads=False,progress=False,timeout=25)
+   if retry is not None and not retry.empty and retry.dropna(subset=["Close"]).shape[0]>=required_rows:
     received.add(s)
+    raw=pd.concat([raw,pd.concat({s:retry},axis=1)],axis=1) if not raw.empty else pd.concat({s:retry},axis=1)
+  except Exception:pass
+  if s not in received:
+   st=stooq_history(s,period)
+   if not st.empty:
+    st=st.rename(columns={c:c.title() for c in st.columns})
+    if st.dropna(subset=["Close"]).shape[0]>=required_rows:
+     one=pd.concat({s:st},axis=1)
+     if not raw.empty and isinstance(raw.columns,pd.MultiIndex) and s in raw.columns.get_level_values(0):
+      raw[s]=raw[s].combine_first(st)
+     else:
+      raw=pd.concat([raw,one],axis=1) if not raw.empty else one
+     received.add(s)
   time.sleep(DOWNLOAD_PAUSE)
  return raw,received
 
