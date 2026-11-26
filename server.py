@@ -30,7 +30,7 @@ def _stooq_symbol(symbol):
 def stooq_history(symbol, period='5y'):
  try:
   url='https://stooq.com/q/d/l/?s='+_stooq_symbol(symbol)+'&i=d'
-  response=requests.get(url,timeout=20,headers={'User-Agent':'Mozilla/5.0'})
+  response=requests.get(url,timeout=12,headers={'User-Agent':'Mozilla/5.0'})
   response.raise_for_status()
   df=pd.read_csv(io.StringIO(response.text))
   if df.empty or 'Date' not in df.columns:return pd.DataFrame()
@@ -39,45 +39,46 @@ def stooq_history(symbol, period='5y'):
   return df
  except Exception:return pd.DataFrame()
 
-def download_prices(symbols, period='1y', batch_size=20):
- parts=[];received=set()
+def download_prices(symbols, period='1y', batch_size=10):
+ parts=[];received=set();required_rows=300 if period=='5y' else 60
+ # Keep Yahoo requests small and bounded. A rate-limited batch is recovered via Stooq,
+ # in parallel, instead of sequential 25-symbol retries that can exceed Render's timeout.
  for start in range(0,len(symbols),batch_size):
   batch=symbols[start:start+batch_size]
   try:
-   data=yf.download(batch,period=period,interval='1d',auto_adjust=True,group_by='ticker',threads=False,progress=False,timeout=25)
+   data=yf.download(batch,period=period,interval='1d',auto_adjust=True,group_by='ticker',threads=False,progress=False,timeout=12)
    if data is not None and not data.empty:
     if isinstance(data.columns,pd.MultiIndex):
      for s in batch:
-      if s in data.columns.get_level_values(0) and data[s].dropna(subset=["Close"]).shape[0]>=(300 if period=="5y" else 60):received.add(s)
-    elif len(batch)==1 and data.dropna(subset=["Close"]).shape[0]>=(300 if period=="5y" else 60):received.add(batch[0]);data=pd.concat({batch[0]:data},axis=1)
+      if s in data.columns.get_level_values(0):
+       frame=data[s].dropna(subset=['Close'])
+       if len(frame)>=required_rows:received.add(s)
+    elif len(batch)==1 and data.dropna(subset=['Close']).shape[0]>=required_rows:
+     received.add(batch[0]);data=pd.concat({batch[0]:data},axis=1)
     parts.append(data)
-  except Exception:pass
-  time.sleep(DOWNLOAD_PAUSE)
+  except Exception as e:
+   print(f'Yahoo batch unavailable ({batch}): {str(e)[:100]}')
  raw=pd.concat(parts,axis=1) if parts else pd.DataFrame()
- # A symbol with a partial Yahoo response is still incomplete. Fill it from Stooq
- # rather than incorrectly treating any non-empty response as full history.
- required_rows=300 if period=="5y" else 60
- for s in [x for x in symbols if x not in received]:
-  # Retry a missing ticker individually via Yahoo before Stooq; batch throttling
-  # can affect only one ticker even when the rest of the batch succeeds.
+ missing=[s for s in symbols if s not in received]
+ def fetch_stooq(s):
   try:
-   retry=yf.download(s,period=period,interval='1d',auto_adjust=True,threads=False,progress=False,timeout=25)
-   if retry is not None and not retry.empty and retry.dropna(subset=["Close"]).shape[0]>=required_rows:
-    received.add(s)
-    raw=pd.concat([raw,pd.concat({s:retry},axis=1)],axis=1) if not raw.empty else pd.concat({s:retry},axis=1)
-  except Exception:pass
-  if s not in received:
    st=stooq_history(s,period)
    if not st.empty:
-    st=st.rename(columns={c:c.title() for c in st.columns})
-    if st.dropna(subset=["Close"]).shape[0]>=required_rows:
-     one=pd.concat({s:st},axis=1)
-     if not raw.empty and isinstance(raw.columns,pd.MultiIndex) and s in raw.columns.get_level_values(0):
-      raw[s]=raw[s].combine_first(st)
-     else:
-      raw=pd.concat([raw,one],axis=1) if not raw.empty else one
-     received.add(s)
-  time.sleep(DOWNLOAD_PAUSE)
+    st=st.rename(columns={col:col.title() for col in st.columns})
+    if 'Close' in st and st['Close'].dropna().shape[0]>=required_rows:return s,st
+  except Exception:pass
+  return s,pd.DataFrame()
+ from concurrent.futures import ThreadPoolExecutor,as_completed
+ with ThreadPoolExecutor(max_workers=8) as pool:
+  futures=[pool.submit(fetch_stooq,s) for s in missing]
+  for future in as_completed(futures):
+   s,st=future.result()
+   if st.empty:continue
+   one=pd.concat({s:st},axis=1)
+   if not raw.empty and isinstance(raw.columns,pd.MultiIndex) and s in raw.columns.get_level_values(0):
+    raw[s]=raw[s].combine_first(st)
+   else:raw=pd.concat([raw,one],axis=1) if not raw.empty else one
+   received.add(s)
  return raw,received
 
 def download_benchmark(period='5y'):
@@ -149,7 +150,7 @@ def backtest():
  # long-only, equal-weight, 10 bps one-way turnover cost. SPY is benchmark.
  symbols=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","AVGO","LLY","JPM","XOM","COST","WMT","NFLX","AMD","CRM","ORCL","GE","CAT","V","MA","UNH","HD","PG","KO","TSLA"]
  try:
-  raw,received=download_prices(symbols,period="5y",batch_size=10)
+  raw,received=download_prices(symbols,period="5y",batch_size=5)
   spydata=download_benchmark("5y")
   close=pd.DataFrame({s:raw[s]["Close"] for s in symbols if s in raw.columns.get_level_values(0)}).dropna(how="all")
   spy=spydata["Close"].dropna()
