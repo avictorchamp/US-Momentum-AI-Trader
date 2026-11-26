@@ -80,4 +80,18 @@ jobs:
           print("Regime:",m["state"],"SPY:",m["spyPrice"])
           print("Breadth > SMA50:",m["aboveSMA50Pct"],"%")
           print("Data timestamp:",d["fetchedAt"])
+          ready=[s for s in d["stocks"] if s.get("status")=="ENTRY READY"]
+          approaching=[s for s in d["stocks"] if s.get("status")=="APPROACHING"]
+          print("ENTRY READY:",len(ready))
+          for s in ready:
+            print("READY:",s["symbol"],"score",s["score"],"price",s["price"],"entry",s["entry"],"stop",s["stop"],"target5R",s["target5R"],"RS3M",s["rs3m"],"vol",s["volumeRatio"])
+          print("TOP APPROACHING:")
+          for s in approaching[:10]:
+            print("WATCH:",s["symbol"],"score",s["score"],"price",s["price"],"entry",s["entry"],"stop",s["stop"],"target5R",s["target5R"],"RS3M",s["rs3m"],"vol",s["volumeRatio"])
           PY
+      - name: Save full scanner data
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanner-data
+          path: scan.json
+          retention-days: 14
