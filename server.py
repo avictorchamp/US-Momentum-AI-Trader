@@ -193,7 +193,31 @@ def backtest():
  except Exception as e:raise HTTPException(502,detail="Backtest data/calculation failed: "+str(e)[:180])
 
 @app.head("/api/quote/{symbol}")
-@app.get("/api/quote/{symbol}")
+
+# Read-only Webull account integration. Credentials stay server-side.
+@app.get("/api/webull/status")
+def webull_status():
+ return {"configured":bool(os.getenv("WEBULL_APP_KEY") and os.getenv("WEBULL_APP_SECRET")),"connected":False,"readOnly":True,"message":"Credentials configured; connection unverified" if os.getenv("WEBULL_APP_KEY") and os.getenv("WEBULL_APP_SECRET") else "Awaiting API approval and credentials"}
+@app.get("/api/webull/portfolio")
+def webull_portfolio():
+ app_key=os.getenv("WEBULL_APP_KEY");app_secret=os.getenv("WEBULL_APP_SECRET")
+ if not app_key or not app_secret:return {"connected":False,"readOnly":True,"message":"Credentials not configured","accounts":[],"positions":[]}
+ try:
+  from webull.core.client import ApiClient
+  from webull.trade.trade_client import TradeClient
+  client=ApiClient(app_key,app_secret,"us")
+  client.add_endpoint("us",os.getenv("WEBULL_API_ENDPOINT","api.webull.com"))
+  trade=TradeClient(client)
+  ar=trade.account_v2.get_account_list()
+  if getattr(ar,"status_code",None)!=200:raise RuntimeError("Account-list request failed")
+  accounts=ar.json() or []
+  account_id=os.getenv("WEBULL_ACCOUNT_ID") or (accounts[0].get("account_id") if accounts else None)
+  if not account_id:return {"connected":True,"readOnly":True,"accounts":accounts,"positions":[],"message":"No account returned"}
+  br=trade.account_v2.get_account_balance(account_id);pr=trade.account_v2.get_account_position(account_id)
+  if br.status_code!=200 or pr.status_code!=200:raise RuntimeError("Balance or positions request failed")
+  return {"connected":True,"readOnly":True,"accountId":account_id,"accounts":accounts,"balance":br.json(),"positions":pr.json() or [],"fetchedAt":datetime.now(timezone.utc).isoformat()}
+ except Exception as e:return {"connected":False,"readOnly":True,"error":str(e)[:200],"message":"Credentials, permissions, or Webull verification not ready"}
+\n@app.get("/api/quote/{symbol}")
 def quote(symbol:str):
  s=symbol.upper()
  if s not in UNIVERSE:raise HTTPException(404,"Symbol not in universe")
