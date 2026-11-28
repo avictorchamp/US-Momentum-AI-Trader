@@ -217,7 +217,8 @@ def webull_portfolio():
   if br.status_code!=200 or pr.status_code!=200:raise RuntimeError("Balance or positions request failed")
   return {"connected":True,"readOnly":True,"accountId":account_id,"accounts":accounts,"balance":br.json(),"positions":pr.json() or [],"fetchedAt":datetime.now(timezone.utc).isoformat()}
  except Exception as e:return {"connected":False,"readOnly":True,"error":str(e)[:200],"message":"Credentials, permissions, or Webull verification not ready"}
-\n@app.get("/api/quote/{symbol}")
+
+@app.get("/api/quote/{symbol}")
 def quote(symbol:str):
  s=symbol.upper()
  if s not in UNIVERSE:raise HTTPException(404,"Symbol not in universe")
